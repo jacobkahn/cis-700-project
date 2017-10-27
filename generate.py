@@ -1,9 +1,4 @@
 import numpy as np
-from keras.models import Sequential
-from keras.layers import Dense
-from keras import backend as K
-from keras import losses
-import tensorflow as tf
 import itertools
 
 def generate_subsets(seq_length, num_subsets, subset_size=2):
