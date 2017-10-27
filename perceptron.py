@@ -30,15 +30,14 @@ class Perceptron(object):
         """
         if len(x) != len(y):
             return None
-        n = len(y)
         vec = np.zeros(self.wv_length)
-        for i in range(n):
+        for i in range(self.seq_length):
             if y[i] == 0:
-                for i in range(n):
-                    vec[i*self.seq_length] += x[i]
+                for j in range(self.seq_length):
+                    vec[i*self.seq_length+j] += x[j]
             else:
-                for i in range(n):
-                    vec[(i+1)*self.seq_length] += x[i]
+                for j in range(self.seq_length):
+                    vec[(i+1)*self.seq_length+j] += x[j]
         return vec
 
 
@@ -120,7 +119,8 @@ class Perceptron(object):
                     iter_count += 1
         # Returns w_avg / (Tl): average weight vector divided by
         # number of tokens in the sequence x number of points
-        return self.w_avg / iter_count
+        self.w_avg /= iter_count
+        return self.w_avg
 
 
     def test(self, dataX, dataY):

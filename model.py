@@ -33,7 +33,7 @@ class DeepLearningClient(LearningClient):
 class PerceptronClient(LearningClient):
     def run(self, constraints):
         # do a structured_perceptron
-        structured_perceptron = perceptron.Perceptron(40, self.seq_length)
+        structured_perceptron = perceptron.Perceptron(20, self.seq_length)
         for constraint in constraints:
             structured_perceptron.add_constraints(constraint)
         train_result = structured_perceptron.train(self.train[0], self.train[1])
@@ -55,8 +55,7 @@ def run(seq_length, num_examples, epochs=10, num_constraints=0):
     [inputs, outputs, constraints] = generate_pairwise_dependent(seq_length, num_examples, num_constraints)
     [train, test] = separate_train_test(inputs, outputs)
 
-    # dlresult = DeepLearningClient(train, test, seq_length).run()
-    dlresult = None
+    dlresult = DeepLearningClient(train, test, seq_length).run()
     perceptron_client = PerceptronClient(train, test, seq_length)
     [p_train, p_test] = perceptron_client.run(constraints)
 
@@ -65,4 +64,4 @@ def run(seq_length, num_examples, epochs=10, num_constraints=0):
 
 # the main function
 if __name__ == "__main__":
-    print run(5, 1000)
+    print run(5, 1000, num_constraints=2)

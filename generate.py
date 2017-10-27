@@ -14,7 +14,7 @@ class RandomConstraint(Constraint):
         poss_assign: the possible valid structured outputs for some function on
                      the data
         """
-        self.index_arry = index_array
+        self.index_array = list(index_array)
         self.assignments = poss_assign
 
 
@@ -24,8 +24,16 @@ class RandomConstraint(Constraint):
         """
         const_projection = np.zeros(len(self.index_array))
         for i in range(len(self.index_array)):
-            const_projection[i] = c[self.index_array[i]]
-        return const_projection in self.assignments
+            const_projection[i] = y[self.index_array[i]]
+        for a in self.assignments:
+            equal_flag = True
+            for i in range(len(const_projection)):
+                if const_projection[i] != a[i]:
+                    equal_flag = False
+                    break
+            if equal_flag:
+                return True
+        return False
 
 
 def generate_subsets(seq_length, num_subsets, subset_size=2):
