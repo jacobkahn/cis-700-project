@@ -1,6 +1,7 @@
 import numpy as np
 import itertools
 import warnings
+from gurobipy import *
 
 class Constraint(object):
     pass
@@ -65,7 +66,8 @@ class Perceptron(object):
         feature vector function phi. Naively searches through each
         possible structured output.
         """
-        candidates = self._binary_arrs(self.seq_length)
+        # Naive inference
+        """candidates = self._binary_arrs(self.seq_length)
         max_score = 0
         y = None
         for c in candidates:
@@ -80,6 +82,29 @@ class Perceptron(object):
                 if valid_flag:
                     y = c
                     max_score = this_score
+        return y"""
+        # ILP-based inference (currently supports only constraints of form
+        # y_iy_j != 1)
+        m = Model("MIP")
+        m.setParam('OutputFlag', False)
+        m_vars = []
+        for i in range(self.seq_length):
+            m_vars.append(None)
+            m_vars[i] = m.addVar(vtype=GRB.BINARY, name=str(i))
+        def obj():
+            res = 0
+            for i in range(self.seq_length):
+                res += np.dot(w[i*self.seq_length:(i+1)*self.seq_length], x)*(1-m_vars[i])+np.dot(w[(i+1)*self.seq_length:(i+2)*self.seq_length], x)*m_vars[i]
+            return res
+        m.setObjective(obj(), GRB.MAXIMIZE)
+        for const in self.constraints:
+            i = const.index_array[0]
+            j = const.index_array[1]
+            m.addConstr(m_vars[i]+m_vars[j] <= 1, str(i) + ' ' + str(j))
+        m.optimize()
+        y = []
+        for i in range(self.seq_length):
+            y.append(m_vars[i].x)
         return y
 
 
