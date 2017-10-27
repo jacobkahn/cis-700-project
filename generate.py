@@ -1,5 +1,32 @@
 import numpy as np
+from perceptron import Constraint
 import itertools
+
+
+class RandomConstraint(Constraint):
+    """
+    Sample constriant that checks
+    """
+    def __init__(self, index_array, poss_assign):
+        """
+        index_array: an array of indices for which the constraints are relevant
+                     in the input y data
+        poss_assign: the possible valid structured outputs for some function on
+                     the data
+        """
+        self.index_arry = index_array
+        self.assignments = poss_assign
+
+
+    def evaluate(self, y):
+        """
+        evaluate the constraint on a specified data point y
+        """
+        const_projection = np.zeros(len(self.index_array))
+        for i in range(len(self.index_array)):
+            const_projection[i] = c[self.index_array[i]]
+        return const_projection in self.assignments
+
 
 def generate_subsets(seq_length, num_subsets, subset_size=2):
     subsets = set()
@@ -44,7 +71,11 @@ def generate_pairwise_dependent(seq_length, num_examples, num_constraints):
     for _ in range(num_examples):
         weights.append(np.random.random_sample((seq_length,))*2-1)
     constraints = generate_subsets(seq_length, num_constraints, 2)
-    print(constraints)
+    # constraints compatible with perceptron implementation
+    good_constraints = []
+    for constraint in constraints:
+        good_constraints.append(RandomConstraint(constraint, [[0, 0], [0, 1],[1, 0]]))
+
     outputs = []
     count = 0
     for j in range(num_examples):
@@ -74,7 +105,7 @@ def generate_pairwise_dependent(seq_length, num_examples, num_constraints):
             count += 1
         outputs.append(y)
     print('Kappa:', float(count)/num_examples)
-    return np.array(inputs), np.array(outputs)
+    return np.array(inputs), np.array(outputs), good_constraints
 
 def separate_train_test(inputs, outputs, test_frac=0.2):
     n = len(inputs)

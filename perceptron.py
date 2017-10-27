@@ -2,28 +2,24 @@ import numpy as np
 import itertools
 import warnings
 
-# Perceptron
 class Constraint(object):
     pass
 
 class Perceptron(object):
-    def __init__(self, num_iterations, dataX, dataY):
+    def __init__(self, num_iterations, seq_length):
         # Collections of constraints, manually added
         self.constraints = []
         self.num_iterations = num_iterations
-        # Input features
-        self.dataX = dataX
-        self.dataY = dataY
-        self.sanitize_input
+        self.seq_length = seq_length
+        self.wv_length = 2*seq_length**2
 
-
-    def sanitize_input(self):
+    def sanitize_input(self, dataX, dataY):
         # Ensure we have as many in vectors as we do outputs
         if len(dataX) == 0 or len(dataY) == 0:
             raise Exception("Data of length zero given")
         if not len(dataX) == len(dataY):
             raise Exception("DataX and DataY not same length")
-        if not len(dataX[0]) < 1:
+        if len(dataX[0]) < 1:
             raise Exception("Sequence length zero for dataX")
 
 
@@ -35,14 +31,14 @@ class Perceptron(object):
         if len(x) != len(y):
             return None
         n = len(y)
-        vec = np.zeros(2*n)
+        vec = np.zeros(self.wv_length)
         for i in range(n):
             if y[i] == 0:
                 for i in range(n):
-                    vec[i] += x[i]
+                    vec[i*self.seq_length] += x[i]
             else:
                 for i in range(n):
-                    vec[i+n] += x[i]
+                    vec[(i+1)*self.seq_length] += x[i]
         return vec
 
 
@@ -64,43 +60,58 @@ class Perceptron(object):
         return arrs
 
 
-    def inference(self, x, w, constraints):
+    def inference(self, x, w):
         """
         Return best y for given x, weight vector w, constraints, and
         feature vector function phi. Naively searches through each
         possible structured output.
         """
-        candidates = self._binary_arrs(len(x))
+        candidates = self._binary_arrs(self.seq_length)
         max_score = 0
         y = None
         for c in candidates:
             feature_vector = self.feature_vector(x, c)
-            if np.dot(w, feature_vector) > max_score:
+            this_score = np.dot(w, feature_vector)
+            if this_score > max_score or y is None:
                 valid_flag = True
-                for const in constraints:
+                for const in self.constraints:
                     if not const.evaluate(c):
                         valid_flag = False
                         break
                 if valid_flag:
                     y = c
+                    max_score = this_score
         return y
 
 
-    def run(self):
+    def loss_function(self, y, y_hat):
+        """
+        given a y_hat (prediction) and actual y, compute error
+        """
+        return np.sum(np.abs(np.array(y) - np.array(y_hat)))
+
+
+    def train(self, dataX, dataY):
         """
         Runs the
         """
+        # Input features
+        self.sanitize_input(dataX, dataY)
+        self.trainDataX = dataX
+        self.trainDataY = dataY
+
         # Set weight vectors
-        self.w = np.zeros(len(self.dataX[0]))
-        self.w_avg = np.zeros(len(self.dataX[0]))
+        self.w = np.zeros(self.wv_length)
+        self.w_avg = np.zeros(self.wv_length)
         # counts the number of times we updated w_avg (we have a valid y prediction)
         iter_count = 0
         # Iterate as many times
         for iterNum in range(0, self.num_iterations):
+            print "Perceptron: iteration " + str(iter_count)
             # Loop through x and y
-            for x, y in zip(self.dataX, self.dataY):
+            for x, y in zip(self.trainDataX, self.trainDataY):
                 # Perform inference
-                y_hat = self.inference(x, self.w, self.constraints)
+                y_hat = self.inference(x, self.w)
                 # Update weight vector
                 if y_hat is not None:
                     self.w += self.feature_vector(x, y)-self.feature_vector(x, y_hat)
@@ -109,37 +120,17 @@ class Perceptron(object):
                     iter_count += 1
         # Returns w_avg / (Tl): average weight vector divided by
         # number of tokens in the sequence x number of points
-        return self.w_avg /iter_count
+        return self.w_avg / iter_count
 
 
+    def test(self, dataX, dataY):
+        # Input features
+        self.sanitize_input(dataX, dataY)
+        self.testDataX = dataX
+        self.testDataY = dataY
 
-class ExampleConstraint(Constraint):
-    """
-    Sample constriant that checks
-    """
-    def __init__(self, index_array, poss_assign):
-        """
-        index_array: an array of indices for which the constraints are relevant
-                     in the input y data
-        poss_assign: the possible valid structured outputs for some function on
-                     the data
-        """
-        self.index_arry = index_array
-        self.assignments = poss_assign
-
-
-    def evaluate(self, y):
-        """
-        evaluate the constraint on a specified data point y
-        """
-        const_projection = np.zeros(len(self.index_array))
-        for i in range(len(self.index_array)):
-            const_projection[i] = c[self.index_array[i]]
-        return const_projection in self.assignments
-
-
-someYData = [[]]
-someXData = [[]]
-structured_perceptron = Perceptron(1000, someXData, someYData)
-structured_perceptron.add_constraints(ExampleConstraint([0, 1], [1, 1]))
-result = structured_perceptron.run()
+        self.total_error = 0
+        for example, actual in zip(self.testDataX, self.testDataY):
+            y_hat = self.inference(example, self.w_avg)
+            self.total_error += self.loss_function(y_hat, actual)
+        return float(self.total_error) / (len(self.testDataY) * self.seq_length)
