@@ -58,7 +58,7 @@ class LocalClassifierClient(LearningClient):
         for i in range(self.seq_length):
             totalerror += localresults[i][1]
         # compute average error over all elements in sequence
-        return float(totalerror) / (self.seq_length)
+        return round(float(totalerror) / (self.seq_length), 5)
 
 
 def proxy_bce(y_true, y_pred):
