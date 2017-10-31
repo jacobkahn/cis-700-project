@@ -6,6 +6,7 @@ from keras import losses
 import tensorflow as tf
 import perceptron
 from generate import *
+import localclassifier
 
 """
 Where the learning happens
@@ -29,17 +30,35 @@ class DeepLearningClient(LearningClient):
         return score
 
 
-
 class PerceptronClient(LearningClient):
     def run(self, constraints):
         # do a structured_perceptron
-        structured_perceptron = perceptron.Perceptron(20, self.seq_length)
+        NUM_ITERS = 20
+        structured_perceptron = perceptron.Perceptron(NUM_ITERS, self.seq_length)
         for constraint in constraints:
             structured_perceptron.add_constraints(constraint)
         train_result = structured_perceptron.train(self.train[0], self.train[1])
         test_result = structured_perceptron.test(self.test[0], self.test[1])
         return (train_result, test_result)
 
+
+class LocalClassifierClient(LearningClient):
+    def run(self):
+        # Perceptrons for each digit
+        localresults = []
+        # For each element in sequence, create a perceptron
+        NUM_ITERS = 20
+        for i in range(self.seq_length):
+            p = localclassifier.LocalClassifier(NUM_ITERS, self.seq_length)
+            train_result = p.train(self.train[0], self.train[1], i)
+            test_result = p.test(self.test[0], self.test[1], i)
+            localresults.append((train_result, test_result))
+        # sum losses over all spots
+        totalerror = 0.0
+        for i in range(self.seq_length):
+            totalerror += localresults[i][1]
+        # compute average error over all elements in sequence
+        return float(totalerror) / (self.seq_length)
 
 
 def proxy_bce(y_true, y_pred):
@@ -52,16 +71,29 @@ def proxy_bce(y_true, y_pred):
     return K.mean(K.binary_crossentropy(y_pred, y_true), axis=-1)
 
 def run(seq_length, num_examples, epochs=10, num_constraints=0):
+    # Generate Data
     [inputs, outputs, constraints] = generate_pairwise_dependent(seq_length, num_examples, num_constraints)
     [train, test] = separate_train_test(inputs, outputs)
 
-    dlresult = DeepLearningClient(train, test, seq_length).run()
-    perceptron_client = PerceptronClient(train, test, seq_length)
-    [p_train, p_test] = perceptron_client.run(constraints)
+    # Naive classifier
+    lcResult = -1
+    lcResult = LocalClassifierClient(train, test, seq_length).run()
 
-    return (dlresult, p_test)
+    # Deep learning
+    dlresult = -1
+    # dlresult = DeepLearningClient(train, test, seq_length).run()
+
+    # Structured perceptron
+    p_test = -1
+    # perceptron_client = PerceptronClient(train, test, seq_length)
+    # [p_train, p_test] = perceptron_client.run(constraints)
+
+    return (lcResult, dlresult, p_test)
 
 
 # the main function
 if __name__ == "__main__":
-    print run(5, 1000, num_constraints=2)
+    results = run(5, 1000, num_constraints=2)
+    print "-------------------------------------------------------"
+    print "RESULTS"
+    print results
