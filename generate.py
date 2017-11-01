@@ -78,6 +78,7 @@ def generate_pairwise_dependent(seq_length, num_examples, num_constraints):
     weights = []
     for _ in range(num_examples):
         weights.append(np.random.random_sample((seq_length,))*2-1)
+    constraints = []
     constraints = generate_subsets(seq_length, num_constraints, 2)
     # constraints compatible with perceptron implementation
     good_constraints = []
