@@ -64,4 +64,4 @@ def run(seq_length, num_examples, epochs=10, num_constraints=0):
 
 # the main function
 if __name__ == "__main__":
-    print run(5, 1000, num_constraints=2)
+    print run(10, 1000, num_constraints=2)
