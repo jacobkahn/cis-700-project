@@ -1,12 +1,14 @@
 import numpy as np
 from keras.models import Sequential
-from keras.layers import Dense
+from keras.layers import Dense, Dropout
+from keras.optimizers import RMSprop, SGD, Adam
 from keras import backend as K
 from keras import losses
 import tensorflow as tf
 import perceptron
 from generate import *
 import localclassifier
+from functools import partial
 
 """
 Where the learning happens
@@ -23,12 +25,164 @@ class DeepLearningClient(LearningClient):
         # do a deep learning
         model = Sequential()
         model.add(Dense(self.seq_length, activation='relu', input_dim=self.seq_length))
+        model.add(Dense(self.seq_length, activation='relu', input_dim=self.seq_length))
         model.add(Dense(self.seq_length, activation='sigmoid', input_dim=self.seq_length))
-        model.compile(optimizer='sgd', loss="binary_crossentropy", metrics=['accuracy'])
-        model.fit(self.train[0], self.train[1], epochs=1000, batch_size=32)
+        sgd = SGD(lr=0.3, decay=0, momentum=0.9, nesterov=True)
+        adam = Adam(lr=0.1, decay=0)
+        """gan = GanClient(self.train, self.test, self.seq_length)
+        gan.run()
+        k_one = K.variable(value=1.0)
+        weights1_arr = gan.discrim.layers[0].layers[0].get_weights()[0]
+        weights1 = K.variable(value=weights1_arr)
+        biases1_arr = gan.discrim.layers[0].layers[0].get_weights()[1]
+        biases1 = K.variable(value=biases1_arr)
+        weights2_arr = gan.discrim.layers[0].layers[1].get_weights()[0]
+        weights2 = K.variable(value=weights2_arr)
+        biases2_arr = gan.discrim.layers[0].layers[1].get_weights()[1]
+        biases2 = K.variable(value=biases2_arr)
+        weights3_arr = gan.discrim.layers[0].layers[2].get_weights()[0]
+        weights3 = K.variable(value=weights3_arr)
+        biases3_arr = gan.discrim.layers[0].layers[2].get_weights()[1]
+        biases3 = K.variable(value=biases3_arr)
+        def gan_predict(y):
+            return K.sigmoid(K.dot(K.sigmoid(K.dot(K.relu(K.dot(y, weights1)+biases1), weights2)+biases2), weights3)+biases3)
+        def np_sigmoid(x):
+            return 1.0/(1.0+np.exp(-1*x))
+        def gan_predict_arr(y):
+            return np_sigmoid(np.dot(np_sigmoid(np.dot(np.maximum(0, np.dot(y, weights1_arr)+biases1_arr), weights2_arr)+biases2_arr), weights3_arr)+biases3_arr)
+        print('prediction:')
+        err = 0
+        for y in self.test[1]:
+            err += 1-gan_predict_arr(y)
+        print(err)"""
+        def loss(y_true, y_pred, alpha=0.001):
+            bce = K.binary_crossentropy(y_true, y_pred)
+            return bce
+            # return bce+alpha*K.log(gan_predict(y_pred))
+            # return K.switch(K.greater(K.variable(value=0.4), bce), bce+alpha*(k_one-K.sigmoid(K.dot(K.sigmoid(K.dot(K.relu(K.dot(y_pred, weights1)+biases1), weights2)+biases2), weights3)+biases3)), bce)
+        model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['accuracy'])
+        model.fit(self.train[0], self.train[1], epochs=10000)
         score = model.evaluate(self.test[0], self.test[1], batch_size=128)
         return score
 
+
+class TFClient(LearningClient):
+    def run(self):
+        graph = tf.Graph()
+        # gan = GanClient(self.train, self.test, self.seq_length)
+        # gan.run()
+        with graph.as_default():
+            tf_train_x = tf.placeholder(tf.float32, shape=[None, self.seq_length])
+            tf_train_y = tf.placeholder(tf.float32, shape=[None, self.seq_length])
+            tf_test_x = tf.constant(self.test[0])
+            layer1_weights = tf.Variable(tf.truncated_normal([self.seq_length, self.seq_length]))
+            layer1_biases = tf.Variable(tf.zeros([self.seq_length]))
+            layer2_weights = tf.Variable(tf.truncated_normal([self.seq_length, self.seq_length]))
+            layer2_biases = tf.Variable(tf.zeros([self.seq_length]))
+            layer3_weights = tf.Variable(tf.truncated_normal([self.seq_length, self.seq_length]))
+            layer3_biases = tf.Variable(tf.zeros([self.seq_length]))
+            def three_layer_network(data):
+                input_layer = tf.matmul(tf.cast(data, tf.float32), tf.cast(layer1_weights, tf.float32))
+                hidden = tf.nn.relu(input_layer + layer1_biases)
+                hidden2 = tf.nn.sigmoid(tf.matmul(hidden, layer2_weights)+layer2_biases)
+                output_layer = tf.nn.sigmoid(tf.matmul(hidden2, layer3_weights) +layer3_biases)
+                return output_layer
+            model_scores = three_layer_network(tf_train_x)
+            loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=model_scores, labels=tf_train_y))
+            optimizer = tf.train.AdamOptimizer(0.01).minimize(loss)
+            train_prediction = model_scores
+            test_prediction = three_layer_network(tf_test_x)
+        def accuracy(predictions, actual):
+            print(len(predictions), len(actual))
+            return 1-np.sum(np.abs(np.array(predictions)-np.array(actual)))/(self.seq_length*len(predictions))
+        with tf.Session(graph=graph) as session:
+            session.run(tf.global_variables_initializer())
+            num_steps = 20000
+            batch_size = len(self.train[1])
+            for step in range(num_steps):
+                # offset = (step*batch_size) % (len(self.train[1]) - batch_size
+                offset = 0
+                minibatch_x = self.train[0][offset:(offset+batch_size),:]
+                minibatch_y = self.train[1][offset:(offset+batch_size)]
+                feed_dict = {tf_train_x: minibatch_x, tf_train_y: minibatch_y}
+                _, l, predictions = session.run([optimizer, loss, train_prediction], feed_dict=feed_dict)
+                if step % 1000 == 0:
+                    print('Minibatch loss at step {0}: {1}'.format(step, l))
+            return accuracy(test_prediction.eval(), self.test[1])
+
+
+class GanClient(LearningClient):
+    iterations = 3000
+    discrim_dropout = 0.1
+    gen_dropout = 0.1
+    def discriminator(self):
+        self.D = Sequential()
+        self.D.add(Dense(self.seq_length, activation='relu', input_dim=self.seq_length))
+        self.D.add(Dense(self.seq_length, activation='sigmoid', input_dim=self.seq_length))
+        # self.D.add(Dropout(self.discrim_dropout))
+        self.D.add(Dense(1, activation='sigmoid'))
+        return self.D
+    def generator(self):
+        self.G = Sequential()
+        self.G.add(Dense(self.seq_length, activation='relu', input_dim=self.seq_length))
+        self.G.add(Dense(self.seq_length, activation='sigmoid', input_dim=self.seq_length))
+        self.G.add(Dropout(self.gen_dropout))
+        return self.G
+    def discrim_model(self):
+        optimizer = RMSprop(lr=0.0002, decay=6e-8)
+        self.DM = Sequential()
+        self.DM.add(self.discriminator())
+        self.DM.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+        return self.DM
+    def adversarial_model(self):
+        optimizer = RMSprop(lr=0.0004, clipvalue=1.0, decay=3e-8)
+        self.AM = Sequential()
+        self.AM.add(self.generator())
+        self.AM.add(self.discriminator())
+        self.AM.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+        return self.AM
+    def run(self):
+        self.gen = self.generator()
+        self.discrim = self.discrim_model()
+        self.adv = self.adversarial_model()
+        for _ in range(self.iterations):
+            noise = np.random.uniform(-1.0, 1.0, size=[len(self.train[0]), self.seq_length])
+            artificial_ys = self.gen.predict(noise)
+            x = np.concatenate((self.train[1], artificial_ys))
+            y = np.ones([2*len(self.train[0]), 1])
+            y[len(self.train[0]):, :] = 0
+            d_loss = self.discrim.train_on_batch(x, y)
+            y = np.ones([len(self.train[0]), 1])
+            noise = np.random.uniform(-1.0, 1.0, size=[len(self.train[0]), self.seq_length])
+            a_loss = self.adv.train_on_batch(noise, y)
+        err = 0.0
+        for i in range(len(self.test[0])):
+            yi_hat = self.gen.predict(np.array([self.test[0][i]]))[0]
+            err += np.dot(np.abs(np.array(yi_hat)-self.test[1][i]), np.abs(np.array(yi_hat)-self.test[1][i]))
+        print(self.discrim.evaluate(self.test[1], np.ones((len(self.test[1]))), batch_size=128))
+        score = (self.seq_length*len(self.test[0])-err)/(self.seq_length*len(self.test[0]))
+        return score
+
+
+class GanConstraint(Constraint):
+    def __init__(self, gan):
+        self.gan = gan
+    def evaluate(self, y):
+        if self.gan.discrim.predict(np.array([y]))[0] == 1:
+            return True
+        return False
+
+
+class PerceptronGanClient(LearningClient):
+    def run(self):
+        NUM_ITERS = 20
+        gan = GanClient(self.train, self.test, self.seq_length)
+        gan.run()
+        structured_perceptron = perceptron.Perceptron(NUM_ITERS, self.seq_length)
+        structured_perceptron.add_constraints(GanConstraint(gan))
+        train_result = structured_perceptron.train(self.train[0], self.train[1], use_ilp=False)
+        test_result = structured_perceptron.test(self.test[0], self.test[1])
+        return (train_result, 1-test_result)
 
 class PerceptronClient(LearningClient):
     def run(self, constraints):
@@ -61,14 +215,18 @@ class LocalClassifierClient(LearningClient):
         return round(1-float(totalerror) / (self.seq_length), 5)
 
 
-def proxy_bce(y_true, y_pred):
+def proxy_bce(y_true, y_pred, gan=None):
     """_epsilon = tf.convert_to_tensor(K.epsilon())
     if _epsilon.dtype != y_pred.dtype.base_dtype:
         _epsilon = tf.cast(_epsilon, y_pred.dtype.base_dtype)
     output = tf.clip_by_value(y_pred, _epsilon, 1-_epsilon)
     output = tf.log(output/(1-output))
     return K.mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=y_true, logits=output), axis=-1)"""
-    return K.mean(K.binary_crossentropy(y_pred, y_true), axis=-1)
+    # return K.mean(K.binary_crossentropy(y_true, y_pred), axis=-1)
+    if gan is None:
+        return losses.binary_crossentropy(y_true, y_pred)
+    with tf.Session().as_default():
+        return losses.binary_crossentropy(y_true, y_pred)+1-gan.discrim.predict(y_pred.eval())
 
 def run(seq_length, num_examples, num_constraints=0):
     # Generate Data
@@ -77,23 +235,32 @@ def run(seq_length, num_examples, num_constraints=0):
 
     # Naive classifier
     lc_acc = -1
-    lc_acc = LocalClassifierClient(train, test, seq_length).run()
+    # lc_acc = LocalClassifierClient(train, test, seq_length).run()
 
     # Deep learning
     dl_acc = -1
     dl_acc = DeepLearningClient(train, test, seq_length).run()[1]
+
+    # Tensorflow
+    tf_acc = -1
+    # tf_acc = TFClient(train, test, seq_length).run()
+
+    # GAN
+    gan_acc = -1
+    # gan = PerceptronGanClient(train, test, seq_length)
+    # gan_acc = gan.run()
 
     # Structured perceptron
     p_acc = -1
     perceptron_client = PerceptronClient(train, test, seq_length)
     [p_train, p_acc] = perceptron_client.run(constraints)
 
-    return {'local': lc_acc, 'ffn': dl_acc, 'perceptron': p_acc}
+    return {'local': lc_acc, 'ffn': dl_acc, 'perceptron': p_acc, 'gan': gan_acc, 'tf': tf_acc}
 
 
 # the main function
 if __name__ == "__main__":
-    results = run(5, 1000, num_constraints=2)
+    results = run(10, 1000, num_constraints=5)
     print "-------------------------------------------------------"
     print "RESULTS"
     print results
