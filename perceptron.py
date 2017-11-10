@@ -149,7 +149,7 @@ class Perceptron(object):
         return self.w_avg
 
 
-    def test(self, dataX, dataY):
+    def test(self, dataX, dataY, use_ilp=True):
         # Input features
         self.sanitize_input(dataX, dataY)
         self.testDataX = dataX
@@ -157,6 +157,6 @@ class Perceptron(object):
 
         self.total_error = 0
         for example, actual in zip(self.testDataX, self.testDataY):
-            y_hat = self.inference(example, self.w_avg)
+            y_hat = self.inference(example, self.w_avg, use_ilp=use_ilp)
             self.total_error += self.loss_function(y_hat, actual)
         return float(self.total_error) / (len(self.testDataY) * self.seq_length)

@@ -1,6 +1,7 @@
 import numpy as np
+import keras
 from keras.models import Sequential
-from keras.layers import Dense, Dropout
+from keras.layers import Dense, Dropout, Input, Concatenate
 from keras.optimizers import RMSprop, SGD, Adam
 from keras import backend as K
 from keras import losses
@@ -112,7 +113,7 @@ class TFClient(LearningClient):
 
 
 class GanClient(LearningClient):
-    iterations = 3000
+    iterations = 6000
     discrim_dropout = 0.1
     gen_dropout = 0.1
     def discriminator(self):
@@ -164,6 +165,62 @@ class GanClient(LearningClient):
         return score
 
 
+class DanClient(LearningClient):
+    iterations = 6000
+    discrim_dropout = 0.1
+    pred_dropout = 0.1
+    def discriminator(self):
+        self.D = Sequential()
+        self.D.add(Dense(self.seq_length*2, activation='relu', input_dim=self.seq_length*2))
+        self.D.add(Dense(self.seq_length, activation='sigmoid', input_dim=self.seq_length))
+        self.D.add(Dropout(self.discrim_dropout))
+        self.D.add(Dense(1, activation='sigmoid'))
+        return self.D
+    def predictor(self):
+        self.input1 = Input(shape=(self.seq_length,))
+        pred_layer1 = Dense(self.seq_length, activation='relu', input_dim=self.seq_length)(self.input1)
+        pred_layer2 = Dense(self.seq_length, activation='sigmoid', input_dim=self.seq_length)(pred_layer1)
+        pred_layer_out = Dropout(self.pred_dropout)(pred_layer2)
+        self.P = keras.models.Model(inputs=[self.input1], outputs=pred_layer_out)
+        return self.P
+    def discrim_model(self):
+        optimizer = RMSprop(lr=0.0002, decay=6e-8)
+        self.DM = Sequential()
+        self.DM.add(self.discriminator())
+        self.DM.compile(loss='binary_crossentropy', optimizer='sgd', metrics=['accuracy'])
+        return self.DM
+    def adversarial_model(self):
+        optimizer = RMSprop(lr=0.0004, clipvalue=1.0, decay=3e-8)
+        pred_layer = self.predictor()
+        self.input2 = Input(shape=(self.seq_length,))
+        self.merge_layer = Concatenate()([pred_layer.outputs[0], self.input2])
+        self.AM = keras.models.Model(inputs=[self.input1, self.input2], outputs=self.discriminator()(self.merge_layer))
+        self.AM.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+        return self.AM
+    def run(self):
+        self.pred = self.predictor()
+        self.discrim = self.discrim_model()
+        self.adv = self.adversarial_model()
+        for _ in range(self.iterations):
+            predicted_ys = self.pred.predict(self.train[0])
+            discrim_input = np.concatenate((np.concatenate((self.train[0], predicted_ys), axis=1), np.concatenate((self.train[0], self.train[1]), axis=1)))
+            discrim_output = np.ones([2*len(self.train[0]), 1])
+            discrim_output[len(self.train[0]):, :] = 0
+            d_loss = self.discrim.train_on_batch(discrim_input, discrim_output)
+            adv_output = np.ones([len(self.train[0]), 1])
+            a_loss = self.adv.train_on_batch([self.train[0], self.train[0]], adv_output)
+        y_hat = self.pred.predict(np.array(self.test[0]))
+        diff = np.abs(np.array(y_hat)-np.array(self.test[1]))
+        err = np.sum(np.multiply(diff, diff))
+        """err  = 0.0
+        for i in range(len(self.test[0])):
+            yi_hat = self.pred.predict(np.array([self.test[0][i]]))[0]
+            err += np.dot(np.abs(np.array(yi_hat)-self.test[1][i]), np.abs(np.array(yi_hat)-self.test[1][i]))
+        print(self.discrim.evaluate(self.test[1], np.ones((len(self.test[1]))), batch_size=128))"""
+        score = (self.seq_length*len(self.test[0])-err)/(self.seq_length*len(self.test[0]))
+        return score
+
+
 class GanConstraint(Constraint):
     def __init__(self, gan):
         self.gan = gan
@@ -181,7 +238,7 @@ class PerceptronGanClient(LearningClient):
         structured_perceptron = perceptron.Perceptron(NUM_ITERS, self.seq_length)
         structured_perceptron.add_constraints(GanConstraint(gan))
         train_result = structured_perceptron.train(self.train[0], self.train[1], use_ilp=False)
-        test_result = structured_perceptron.test(self.test[0], self.test[1])
+        test_result = structured_perceptron.test(self.test[0], self.test[1], use_ilp=False)
         return (train_result, 1-test_result)
 
 class PerceptronClient(LearningClient):
@@ -239,7 +296,7 @@ def run(seq_length, num_examples, num_constraints=0):
 
     # Deep learning
     dl_acc = -1
-    dl_acc = DeepLearningClient(train, test, seq_length).run()[1]
+    # dl_acc = DeepLearningClient(train, test, seq_length).run()[1]
 
     # Tensorflow
     tf_acc = -1
@@ -250,17 +307,22 @@ def run(seq_length, num_examples, num_constraints=0):
     # gan = PerceptronGanClient(train, test, seq_length)
     # gan_acc = gan.run()
 
+    # DAN
+    dan_acc = -1
+    dan = DanClient(train, test, seq_length)
+    dan_acc = dan.run()
+
     # Structured perceptron
     p_acc = -1
     perceptron_client = PerceptronClient(train, test, seq_length)
     [p_train, p_acc] = perceptron_client.run(constraints)
 
-    return {'local': lc_acc, 'ffn': dl_acc, 'perceptron': p_acc, 'gan': gan_acc, 'tf': tf_acc}
+    return {'local': lc_acc, 'ffn': dl_acc, 'perceptron': p_acc, 'gan': gan_acc, 'tf': tf_acc, 'dan': dan_acc}
 
 
 # the main function
 if __name__ == "__main__":
-    results = run(10, 1000, num_constraints=5)
+    results = run(10, 1000, num_constraints=3)
     print "-------------------------------------------------------"
     print "RESULTS"
     print results
