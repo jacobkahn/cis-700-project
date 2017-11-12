@@ -26,10 +26,11 @@ class DeepLearningClient(LearningClient):
         # do a deep learning
         model = Sequential()
         model.add(Dense(self.seq_length, activation='relu', input_dim=self.seq_length))
-        model.add(Dense(self.seq_length, activation='relu', input_dim=self.seq_length))
+        # model.add(Dense(self.seq_length, activation='tanh', input_dim=self.seq_length))
         model.add(Dense(self.seq_length, activation='sigmoid', input_dim=self.seq_length))
+        model.add(Dropout(0.1))
         sgd = SGD(lr=0.3, decay=0, momentum=0.9, nesterov=True)
-        adam = Adam(lr=0.1, decay=0)
+        adam = Adam(lr=0.0002, decay=0)
         """gan = GanClient(self.train, self.test, self.seq_length)
         gan.run()
         k_one = K.variable(value=1.0)
@@ -61,8 +62,8 @@ class DeepLearningClient(LearningClient):
             return bce
             # return bce+alpha*K.log(gan_predict(y_pred))
             # return K.switch(K.greater(K.variable(value=0.4), bce), bce+alpha*(k_one-K.sigmoid(K.dot(K.sigmoid(K.dot(K.relu(K.dot(y_pred, weights1)+biases1), weights2)+biases2), weights3)+biases3)), bce)
-        model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['accuracy'])
-        model.fit(self.train[0], self.train[1], epochs=10000)
+        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        model.fit(self.train[0], self.train[1], epochs=1000)
         score = model.evaluate(self.test[0], self.test[1], batch_size=128)
         return score
 
@@ -167,56 +168,84 @@ class GanClient(LearningClient):
 
 class DanClient(LearningClient):
     iterations = 6000
-    discrim_dropout = 0.1
-    pred_dropout = 0.1
+    discrim_dropout = 0.2
+    pred_dropout = 0.2
+    alpha = 0.03
     def discriminator(self):
         self.D = Sequential()
-        self.D.add(Dense(self.seq_length*2, activation='relu', input_dim=self.seq_length*2))
-        self.D.add(Dense(self.seq_length, activation='sigmoid', input_dim=self.seq_length))
-        self.D.add(Dropout(self.discrim_dropout))
-        self.D.add(Dense(1, activation='sigmoid'))
+        self.Dlayers = []
+        self.Dlayers.append(keras.layers.LeakyReLU(alpha=self.alpha, input_shape=(self.seq_length,)))
+        self.Dlayers.append(Dense(self.seq_length, activation='sigmoid', input_dim=self.seq_length))
+        # self.Dlayers.append(keras.layers.LeakyReLU(alpha=self.alpha, input_shape=(self.seq_length/3,)))
+        self.Dlayers.append(Dropout(self.discrim_dropout))
+        self.Dlayers.append(Dense(self.seq_length/2, activation='sigmoid', input_dim=self.seq_length))
+        self.Dlayers.append(Dense(1, activation='sigmoid'))
+        for l in self.Dlayers:
+            self.D.add(l)
         return self.D
     def predictor(self):
         self.input1 = Input(shape=(self.seq_length,))
+        # pred_layer1 = keras.layers.LeakyReLU(alpha=self.alpha)(self.input1)
         pred_layer1 = Dense(self.seq_length, activation='relu', input_dim=self.seq_length)(self.input1)
         pred_layer2 = Dense(self.seq_length, activation='sigmoid', input_dim=self.seq_length)(pred_layer1)
+        # pred_layer3 = keras.layers.LeakyReLU(alpha=self.alpha)(pred_layer2)
+        # pred_layer4 = Dense(self.seq_length, activation='tanh', input_dim=self.seq_length)(pred_layer3)
         pred_layer_out = Dropout(self.pred_dropout)(pred_layer2)
         self.P = keras.models.Model(inputs=[self.input1], outputs=pred_layer_out)
         return self.P
     def discrim_model(self):
-        optimizer = RMSprop(lr=0.0002, decay=6e-8)
+        optimizer = Adam(lr=0.0002, decay=0)
         self.DM = Sequential()
         self.DM.add(self.discriminator())
         self.DM.compile(loss='binary_crossentropy', optimizer='sgd', metrics=['accuracy'])
         return self.DM
     def adversarial_model(self):
-        optimizer = RMSprop(lr=0.0004, clipvalue=1.0, decay=3e-8)
-        pred_layer = self.predictor()
+        optimizer = Adam(lr=0.0002, decay=0)
+        for l in self.Dlayers:
+            l.trainable = False
         self.input2 = Input(shape=(self.seq_length,))
-        self.merge_layer = Concatenate()([pred_layer.outputs[0], self.input2])
-        self.AM = keras.models.Model(inputs=[self.input1, self.input2], outputs=self.discriminator()(self.merge_layer))
-        self.AM.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+        prediction = self.pred(self.input1)
+        # self.merge_layer = Concatenate()([self.input2, prediction])
+        output_tensor = self.Dlayers[0](prediction)
+        for l in range(1, len(self.Dlayers)):
+            output_tensor = self.Dlayers[l](output_tensor)
+        self.AM = keras.models.Model(inputs=[self.input1, self.input2], outputs=[output_tensor, prediction])
+        self.AM.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'], loss_weights=[0.1, 1.])
         return self.AM
     def run(self):
         self.pred = self.predictor()
         self.discrim = self.discrim_model()
         self.adv = self.adversarial_model()
-        for _ in range(self.iterations):
+        for i in range(self.iterations):
             predicted_ys = self.pred.predict(self.train[0])
-            discrim_input = np.concatenate((np.concatenate((self.train[0], predicted_ys), axis=1), np.concatenate((self.train[0], self.train[1]), axis=1)))
-            discrim_output = np.ones([2*len(self.train[0]), 1])
-            discrim_output[len(self.train[0]):, :] = 0
-            d_loss = self.discrim.train_on_batch(discrim_input, discrim_output)
-            adv_output = np.ones([len(self.train[0]), 1])
-            a_loss = self.adv.train_on_batch([self.train[0], self.train[0]], adv_output)
+            for _ in range(3):
+                # discrim_input = np.concatenate((self.train[0], predicted_ys), axis=1)
+                discrim_input = predicted_ys
+                discrim_output = np.zeros([len(self.train[0]), 1])
+
+                d_loss = self.discrim.train_on_batch(discrim_input, discrim_output)
+                # print('D1:', d_loss)
+                # discrim_input = np.concatenate((self.train[0], self.train[1]), axis=1)
+                discrim_input = self.train[1]
+                discrim_output = np.ones([len(self.train[0]), 1])
+                d_loss = self.discrim.train_on_batch(discrim_input, discrim_output)
+                # print('D2:', d_loss)
+                """discrim_input = np.concatenate((np.concatenate((self.train[0], predicted_ys), axis=1), np.concatenate((self.train[0], self.train[1]), axis=1)))
+                discrim_output = np.zeros([2*len(self.train[0]), 1])
+                discrim_output[len(self.train[0]):, :] = 1.0
+                d_loss = self.discrim.train_on_batch(discrim_input, discrim_output)"""
+            # print('D2:', d_loss)
+            for j in range(3):
+                adv_output = [np.ones([len(self.train[0]), 1]), self.train[1]]
+                a_loss = self.adv.train_on_batch([self.train[0], self.train[0]], adv_output)
+            # print('A:', a_loss)
+        y_hat = self.pred.predict(np.array(self.train[0]))
+        diff = np.abs(np.array(y_hat)-np.array(self.train[1]))
+        err = np.sum(diff)
+        print((self.seq_length*len(self.train[0])-err)/(self.seq_length*len(self.train[0])))
         y_hat = self.pred.predict(np.array(self.test[0]))
         diff = np.abs(np.array(y_hat)-np.array(self.test[1]))
-        err = np.sum(np.multiply(diff, diff))
-        """err  = 0.0
-        for i in range(len(self.test[0])):
-            yi_hat = self.pred.predict(np.array([self.test[0][i]]))[0]
-            err += np.dot(np.abs(np.array(yi_hat)-self.test[1][i]), np.abs(np.array(yi_hat)-self.test[1][i]))
-        print(self.discrim.evaluate(self.test[1], np.ones((len(self.test[1]))), batch_size=128))"""
+        err = np.sum(diff)
         score = (self.seq_length*len(self.test[0])-err)/(self.seq_length*len(self.test[0]))
         return score
 
@@ -296,7 +325,7 @@ def run(seq_length, num_examples, num_constraints=0):
 
     # Deep learning
     dl_acc = -1
-    # dl_acc = DeepLearningClient(train, test, seq_length).run()[1]
+    dl_acc = DeepLearningClient(train, test, seq_length).run()[1]
 
     # Tensorflow
     tf_acc = -1
@@ -322,7 +351,7 @@ def run(seq_length, num_examples, num_constraints=0):
 
 # the main function
 if __name__ == "__main__":
-    results = run(10, 1000, num_constraints=3)
+    results = run(10, 1000, num_constraints=5)
     print "-------------------------------------------------------"
     print "RESULTS"
     print results
