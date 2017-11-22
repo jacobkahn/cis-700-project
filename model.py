@@ -25,10 +25,10 @@ class DeepLearningClient(LearningClient):
     def run(self):
         # do a deep learning
         model = Sequential()
-        model.add(Dense(self.seq_length, activation='relu', input_dim=self.seq_length))
+        model.add(Dense(4*self.seq_length, activation='relu', input_dim=self.seq_length))
         # model.add(Dense(self.seq_length, activation='tanh', input_dim=self.seq_length))
-        model.add(Dense(self.seq_length, activation='sigmoid', input_dim=self.seq_length))
-        model.add(Dropout(0.1))
+        model.add(Dense(self.seq_length, activation='sigmoid', input_dim=4*self.seq_length))
+        model.add(Dropout(0.4))
         sgd = SGD(lr=0.3, decay=0, momentum=0.9, nesterov=True)
         adam = Adam(lr=0.0002, decay=0)
         """gan = GanClient(self.train, self.test, self.seq_length)
@@ -63,7 +63,8 @@ class DeepLearningClient(LearningClient):
             # return bce+alpha*K.log(gan_predict(y_pred))
             # return K.switch(K.greater(K.variable(value=0.4), bce), bce+alpha*(k_one-K.sigmoid(K.dot(K.sigmoid(K.dot(K.relu(K.dot(y_pred, weights1)+biases1), weights2)+biases2), weights3)+biases3)), bce)
         model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-        model.fit(self.train[0], self.train[1], epochs=1000)
+        model.fit(self.train[0], self.train[1], epochs=900)
+        # model.fit(self.train[0], self.train[1], epochs=900)
         score = model.evaluate(self.test[0], self.test[1], batch_size=128)
         return score
 
@@ -165,33 +166,46 @@ class GanClient(LearningClient):
         score = (self.seq_length*len(self.test[0])-err)/(self.seq_length*len(self.test[0]))
         return score
 
-
 class DanClient(LearningClient):
-    iterations = 6000
-    discrim_dropout = 0.2
+    iterations = 300
+    discrim_dropout = 0.5
     pred_dropout = 0.2
     alpha = 0.03
     def discriminator(self):
-        self.D = Sequential()
         self.Dlayers = []
-        self.Dlayers.append(keras.layers.LeakyReLU(alpha=self.alpha, input_shape=(self.seq_length,)))
-        self.Dlayers.append(Dense(self.seq_length, activation='sigmoid', input_dim=self.seq_length))
+        self.D = Sequential()
+        # self.Dlayers.append(Dense(2*self.seq_length, activation='relu', input_dim=self.seq_length))
+        self.Dlayers.append(Dense(3*self.seq_length, activation='relu', input_dim=self.seq_length))
+        # self.Dlayers.append(Dropout(self.discrim_dropout))
+        # self.Dlayers.append(keras.layers.LeakyReLU(alpha=self.alpha, input_shape=(2*self.seq_length,)))
+        self.Dlayers.append(Dense(3*self.seq_length, activation='sigmoid', input_dim=3*self.seq_length))
         # self.Dlayers.append(keras.layers.LeakyReLU(alpha=self.alpha, input_shape=(self.seq_length/3,)))
         self.Dlayers.append(Dropout(self.discrim_dropout))
-        self.Dlayers.append(Dense(self.seq_length/2, activation='sigmoid', input_dim=self.seq_length))
-        self.Dlayers.append(Dense(1, activation='sigmoid'))
+        self.Dlayers.append(Dense(1, activation='sigmoid', input_dim=3*self.seq_length))
         for l in self.Dlayers:
             self.D.add(l)
+        """self.discrim_input = Input(shape=(self.seq_length,))
+        self.Dlayers.append(Dense(1, activation='linear', input_dim=self.seq_length)(self.discrim_input))
+        self.Dlayers.append(Dense(1, activation='linear', input_dim=self.seq_length)(self.discrim_input))
+        self.Dlayers.append(keras.layers.maximum(self.Dlayers))
+        # self.Dlayers.append(keras.layers.Lambda(lambda x: x[1]-x[0])([self.Dlayers[-1], self.Dlayers[-2]]))
+        self.D = keras.models.Model(inputs=[self.discrim_input], outputs=self.Dlayers[-1])"""
         return self.D
     def predictor(self):
-        self.input1 = Input(shape=(self.seq_length,))
+        # self.input1 = Input(shape=(self.seq_length,))
         # pred_layer1 = keras.layers.LeakyReLU(alpha=self.alpha)(self.input1)
-        pred_layer1 = Dense(self.seq_length, activation='relu', input_dim=self.seq_length)(self.input1)
-        pred_layer2 = Dense(self.seq_length, activation='sigmoid', input_dim=self.seq_length)(pred_layer1)
+        # pred_layer1 = Dense(self.seq_length, activation='relu', input_dim=self.seq_length)(self.input1)
+        # pred_layer2 = Dense(self.seq_length, activation='sigmoid', input_dim=self.seq_length)(pred_layer1)
         # pred_layer3 = keras.layers.LeakyReLU(alpha=self.alpha)(pred_layer2)
+        # pred_layer3 = keras.layers.BatchNormalization()(pred_layer1)
         # pred_layer4 = Dense(self.seq_length, activation='tanh', input_dim=self.seq_length)(pred_layer3)
-        pred_layer_out = Dropout(self.pred_dropout)(pred_layer2)
-        self.P = keras.models.Model(inputs=[self.input1], outputs=pred_layer_out)
+        # pred_layer_out = Dropout(self.pred_dropout)(pred_layer2)
+        # self.P = keras.models.Model(inputs=[self.input1], outputs=pred_layer2)
+        self.P = Sequential()
+        self.P.add(Dense(2*self.seq_length, activation='relu', input_dim=self.seq_length))
+        self.P.add(Dense(self.seq_length, activation='sigmoid', input_dim=2*self.seq_length))
+        self.P.add(Dropout(self.pred_dropout))
+        self.P.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
         return self.P
     def discrim_model(self):
         optimizer = Adam(lr=0.0002, decay=0)
@@ -203,12 +217,15 @@ class DanClient(LearningClient):
         optimizer = Adam(lr=0.0002, decay=0)
         for l in self.Dlayers:
             l.trainable = False
+        self.D.trainable = False
         self.input2 = Input(shape=(self.seq_length,))
+        self.input1 = Input(shape=(self.seq_length,))
         prediction = self.pred(self.input1)
         # self.merge_layer = Concatenate()([self.input2, prediction])
-        output_tensor = self.Dlayers[0](prediction)
+        """output_tensor = self.Dlayers[0](prediction)
         for l in range(1, len(self.Dlayers)):
-            output_tensor = self.Dlayers[l](output_tensor)
+            output_tensor = self.Dlayers[l](output_tensor)"""
+        output_tensor = self.D(prediction)
         self.AM = keras.models.Model(inputs=[self.input1, self.input2], outputs=[output_tensor, prediction])
         self.AM.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'], loss_weights=[0.1, 1.])
         return self.AM
@@ -223,26 +240,25 @@ class DanClient(LearningClient):
                 discrim_input = predicted_ys
                 discrim_output = np.zeros([len(self.train[0]), 1])
 
-                d_loss = self.discrim.train_on_batch(discrim_input, discrim_output)
+                d1_loss = self.discrim.fit(discrim_input, discrim_output, epochs=1)
                 # print('D1:', d_loss)
                 # discrim_input = np.concatenate((self.train[0], self.train[1]), axis=1)
                 discrim_input = self.train[1]
                 discrim_output = np.ones([len(self.train[0]), 1])
-                d_loss = self.discrim.train_on_batch(discrim_input, discrim_output)
+                d2_loss = self.discrim.fit(discrim_input, discrim_output, epochs=1)
                 # print('D2:', d_loss)
                 """discrim_input = np.concatenate((np.concatenate((self.train[0], predicted_ys), axis=1), np.concatenate((self.train[0], self.train[1]), axis=1)))
                 discrim_output = np.zeros([2*len(self.train[0]), 1])
                 discrim_output[len(self.train[0]):, :] = 1.0
                 d_loss = self.discrim.train_on_batch(discrim_input, discrim_output)"""
             # print('D2:', d_loss)
-            for j in range(3):
-                adv_output = [np.ones([len(self.train[0]), 1]), self.train[1]]
-                a_loss = self.adv.train_on_batch([self.train[0], self.train[0]], adv_output)
+            adv_output = [np.ones([len(self.train[0]), 1]), self.train[1]]
+            a_loss = self.adv.fit([self.train[0], self.train[0]], adv_output, epochs=3)
             # print('A:', a_loss)
-        y_hat = self.pred.predict(np.array(self.train[0]))
-        diff = np.abs(np.array(y_hat)-np.array(self.train[1]))
-        err = np.sum(diff)
-        print((self.seq_length*len(self.train[0])-err)/(self.seq_length*len(self.train[0])))
+            y_hat = self.pred.predict(np.array(self.train[0]))
+            diff = np.abs(np.array(y_hat)-np.array(self.train[1]))
+            err = np.sum(diff)
+            print(str(i), (self.seq_length*len(self.train[0])-err)/(self.seq_length*len(self.train[0])), d1_loss, d2_loss)
         y_hat = self.pred.predict(np.array(self.test[0]))
         diff = np.abs(np.array(y_hat)-np.array(self.test[1]))
         err = np.sum(diff)
@@ -351,7 +367,7 @@ def run(seq_length, num_examples, num_constraints=0):
 
 # the main function
 if __name__ == "__main__":
-    results = run(10, 1000, num_constraints=5)
+    results = run(10, 1000, num_constraints=2)
     print "-------------------------------------------------------"
     print "RESULTS"
     print results
