@@ -99,9 +99,12 @@ class Perceptron(object):
             return res
         m.setObjective(obj(), GRB.MAXIMIZE)
         for const in self.constraints:
-            i = const.index_array[0]
+            # Pairwise constraint handling
+            """i = const.index_array[0]
             j = const.index_array[1]
-            m.addConstr(m_vars[i]+m_vars[j] <= 1, str(i) + ' ' + str(j))
+            m.addConstr(m_vars[i]+m_vars[j] <= 1, str(i) + ' ' + str(j))"""
+            # General constraint handling
+            m.addConstr(quicksum([const.coeff[i]*m_vars[i] for i in range(len(m_vars))]) <= const.val, str(const.coeff) + ' ' + str(const.val))
         m.optimize()
         y = []
         for i in range(self.seq_length):

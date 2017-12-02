@@ -25,10 +25,10 @@ class DeepLearningClient(LearningClient):
     def run(self):
         # do a deep learning
         model = Sequential()
-        model.add(Dense(3*self.seq_length, activation='relu', input_dim=self.seq_length))
+        model.add(Dense(2*self.seq_length, activation='relu', input_dim=self.seq_length))
         # model.add(Dense(self.seq_length, activation='tanh', input_dim=self.seq_length))
-        model.add(Dense(self.seq_length, activation='sigmoid', input_dim=3*self.seq_length))
-        model.add(Dropout(0.3))
+        model.add(Dense(self.seq_length, activation='sigmoid', input_dim=2*self.seq_length))
+        model.add(Dropout(0.2))
         sgd = SGD(lr=0.3, decay=0, momentum=0.9, nesterov=True)
         adam = Adam(lr=0.0002, decay=0)
         """gan = GanClient(self.train, self.test, self.seq_length)
@@ -303,7 +303,7 @@ class LocalClassifierClient(LearningClient):
         # Perceptrons for each digit
         localresults = []
         # For each element in sequence, create a perceptron
-        NUM_ITERS = 10
+        NUM_ITERS = 20
         for i in range(self.seq_length):
             p = localclassifier.LocalClassifier(NUM_ITERS, self.seq_length)
             train_result = p.train(self.train[0], self.train[1], i)
@@ -332,7 +332,7 @@ def proxy_bce(y_true, y_pred, gan=None):
 
 def run(seq_length, num_examples, num_constraints=0):
     # Generate Data
-    [inputs, outputs, constraints] = generate_pairwise_dependent(seq_length, num_examples, num_constraints)
+    [inputs, outputs, constraints] = generate_general(seq_length, num_examples, num_constraints, noise=True)
     [train, test] = separate_train_test(inputs, outputs)
 
     # Naive classifier
@@ -354,8 +354,8 @@ def run(seq_length, num_examples, num_constraints=0):
 
     # DAN
     dan_acc = -1
-    dan = DanClient(train, test, seq_length)
-    dan_acc = dan.run()
+    # dan = DanClient(train, test, seq_length)
+    # dan_acc = dan.run()
 
     # Structured perceptron
     p_acc = -1
@@ -367,7 +367,7 @@ def run(seq_length, num_examples, num_constraints=0):
 
 # the main function
 if __name__ == "__main__":
-    results = run(10, 1000, num_constraints=2)
+    results = run(15, 1000, num_constraints=14)
     print "-------------------------------------------------------"
     print "RESULTS"
     print results
