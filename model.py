@@ -10,6 +10,7 @@ import perceptron
 from generate import *
 import localclassifier
 from functools import partial
+import multiprocessing
 
 """
 Where the learning happens
@@ -20,8 +21,20 @@ class LearningClient(object):
         self.test = test
         self.seq_length = seq_length
 
+    def get_identifying_key(self):
+        raise Exception('Unimplemented in base: LearningClient.get_identifying_key')
+
+    def run(self):
+        raise Exception('Unimplemented in base: LearningClient.run')
+
+    def run_parallelized_compute(self, shared_memory):
+        shared_memory[self.get_identifying_key()] = self.run()
+
 
 class DeepLearningClient(LearningClient):
+    def get_identifying_key(self):
+        return 'ffn'
+
     def run(self):
         # do a deep learning
         model = Sequential()
@@ -70,6 +83,9 @@ class DeepLearningClient(LearningClient):
 
 
 class TFClient(LearningClient):
+    def get_identifying_key(self):
+        return 'tf'
+    
     def run(self):
         graph = tf.Graph()
         # gan = GanClient(self.train, self.test, self.seq_length)
@@ -115,6 +131,9 @@ class TFClient(LearningClient):
 
 
 class GanClient(LearningClient):
+    def get_identifying_key(self):
+        return 'gan'
+
     iterations = 6000
     discrim_dropout = 0.1
     gen_dropout = 0.1
@@ -167,6 +186,9 @@ class GanClient(LearningClient):
         return score
 
 class DanClient(LearningClient):
+    def get_identifying_key(self):
+        return 'dan'
+
     iterations = 300
     discrim_dropout = 0.7
     pred_dropout = 0.2
@@ -276,6 +298,9 @@ class GanConstraint(Constraint):
 
 
 class PerceptronGanClient(LearningClient):
+    def get_identifying_key(self):
+        return 'ganperceptron'
+
     def run(self):
         NUM_ITERS = 20
         gan = GanClient(self.train, self.test, self.seq_length)
@@ -287,18 +312,28 @@ class PerceptronGanClient(LearningClient):
         return (train_result, 1-test_result)
 
 class PerceptronClient(LearningClient):
-    def run(self, constraints):
+    def get_identifying_key(self):
+        return 'perceptron'
+
+    def add_constraints(self, constraints):
+        self.constraints = constraints
+
+    def run(self):
         # do a structured_perceptron
         NUM_ITERS = 20
         structured_perceptron = perceptron.Perceptron(NUM_ITERS, self.seq_length)
-        for constraint in constraints:
+        for constraint in self.constraints:
             structured_perceptron.add_constraints(constraint)
         train_result = structured_perceptron.train(self.train[0], self.train[1])
         test_result = structured_perceptron.test(self.test[0], self.test[1])
-        return (train_result, 1-test_result)
+        # return (train_result, 1-test_result)
+        return 1 - test_result
 
 
 class LocalClassifierClient(LearningClient):
+    def get_identifying_key(self):
+        return 'localclassifier'
+
     def run(self):
         # Perceptrons for each digit
         localresults = []
@@ -330,39 +365,66 @@ def proxy_bce(y_true, y_pred, gan=None):
     with tf.Session().as_default():
         return losses.binary_crossentropy(y_true, y_pred)+1-gan.discrim.predict(y_pred.eval())
 
+def run_parallel_compute(obj, args):
+    obj.run_parallelized_compute(args)
+
 def run(seq_length, num_examples, num_constraints=0):
+    # Set up shared data across processes
+    manager = multiprocessing.Manager()
+    # this is a shared map with mutex proclocks 
+    shared_results = manager.dict()
+    # collection of process threads to be joined
+    jobs = []
+
     # Generate Data
     [inputs, outputs, constraints] = generate_general(seq_length, num_examples, num_constraints, noise=True)
     [train, test] = separate_train_test(inputs, outputs)
 
     # Naive classifier
-    lc_acc = -1
-    # lc_acc = LocalClassifierClient(train, test, seq_length).run()
+    # lc_acc = LocalClassifierClient(train, test, seq_length)
+    # p = multiprocessing.Process(target=run_parallel_compute, args=(lc_acc, shared_results))
+    # jobs.append(p)
+    # p.start()
 
     # Deep learning
-    dl_acc = -1
-    dl_acc = DeepLearningClient(train, test, seq_length).run()[1]
+    dl_acc = DeepLearningClient(train, test, seq_length)
+    p = multiprocessing.Process(target=run_parallel_compute, args=(dl_acc, shared_results))
+    jobs.append(p)
+    p.start()
 
     # Tensorflow
-    tf_acc = -1
-    # tf_acc = TFClient(train, test, seq_length).run()
+    # tf_acc = TFClient(train, test, seq_length)
+    # p = multiprocessing.Process(target=run_parallel_compute, args=(tf_acc, shared_results))
+    # jobs.append(p)
+    # p.start()
+
 
     # GAN
-    gan_acc = -1
     # gan = PerceptronGanClient(train, test, seq_length)
-    # gan_acc = gan.run()
+    # p = multiprocessing.Process(target=run_parallel_compute, args=(gan, shared_results))
+    # jobs.append(p)
+    # p.start()
+
 
     # DAN
-    dan_acc = -1
     # dan = DanClient(train, test, seq_length)
-    # dan_acc = dan.run()
+    # p = multiprocessing.Process(target=run_parallel_compute, args=(dan, shared_results))
+    # jobs.append(p)
+    # p.start()
 
     # Structured perceptron
-    p_acc = -1
     perceptron_client = PerceptronClient(train, test, seq_length)
-    [p_train, p_acc] = perceptron_client.run(constraints)
+    perceptron_client.add_constraints(constraints)
+    p = multiprocessing.Process(target=run_parallel_compute, args=(perceptron_client, shared_results))
+    jobs.append(p)
+    p.start()
 
-    return {'local': lc_acc, 'ffn': dl_acc, 'perceptron': p_acc, 'gan': gan_acc, 'tf': tf_acc, 'dan': dan_acc}
+    # join all subprocesses
+    for job in jobs:
+        p.join()
+    # return {'local': lc_acc, 'ffn': dl_acc, 'perceptron': p_acc, 'gan': gan_acc, 'tf': tf_acc, 'dan': dan_acc}
+    # return shared threadlocal data
+    return shared_results
 
 
 # the main function
