@@ -366,6 +366,9 @@ def proxy_bce(y_true, y_pred, gan=None):
         return losses.binary_crossentropy(y_true, y_pred)+1-gan.discrim.predict(y_pred.eval())
 
 def run_parallel_compute(obj, args):
+    """
+    shim that helps serialize an instance method for a new process hook
+    """
     obj.run_parallelized_compute(args)
 
 def run(seq_length, num_examples, num_constraints=0):
@@ -377,8 +380,10 @@ def run(seq_length, num_examples, num_constraints=0):
     jobs = []
 
     # Generate Data
-    [inputs, outputs, constraints] = generate_general(seq_length, num_examples, num_constraints, noise=True)
+    [inputs, outputs, constraints, complexity, mutualcomplexity] = generate_general(seq_length, num_examples, num_constraints, noise=True)
     [train, test] = separate_train_test(inputs, outputs)
+    shared_results['constraint_complexity'] = complexity
+    shared_results['mutual_complexity'] = mutualcomplexity
 
     # Naive classifier
     # lc_acc = LocalClassifierClient(train, test, seq_length)
@@ -387,10 +392,10 @@ def run(seq_length, num_examples, num_constraints=0):
     # p.start()
 
     # Deep learning
-    dl_acc = DeepLearningClient(train, test, seq_length)
-    p = multiprocessing.Process(target=run_parallel_compute, args=(dl_acc, shared_results))
-    jobs.append(p)
-    p.start()
+    # dl_acc = DeepLearningClient(train, test, seq_length)
+    # p = multiprocessing.Process(target=run_parallel_compute, args=(dl_acc, shared_results))
+    # jobs.append(p)
+    # p.start()
 
     # Tensorflow
     # tf_acc = TFClient(train, test, seq_length)
@@ -413,11 +418,11 @@ def run(seq_length, num_examples, num_constraints=0):
     # p.start()
 
     # Structured perceptron
-    perceptron_client = PerceptronClient(train, test, seq_length)
-    perceptron_client.add_constraints(constraints)
-    p = multiprocessing.Process(target=run_parallel_compute, args=(perceptron_client, shared_results))
-    jobs.append(p)
-    p.start()
+    # perceptron_client = PerceptronClient(train, test, seq_length)
+    # perceptron_client.add_constraints(constraints)
+    # p = multiprocessing.Process(target=run_parallel_compute, args=(perceptron_client, shared_results))
+    # jobs.append(p)
+    # p.start()
 
     # join all subprocesses
     for job in jobs:

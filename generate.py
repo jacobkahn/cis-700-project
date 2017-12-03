@@ -149,7 +149,21 @@ def generate_general(seq_length, num_training_examples, num_constraints, soft=Fa
         weights.append(np.random.random_sample((seq_length,))*2-1)
     constraints = []
     constraints = generate_coefficients(seq_length, num_constraints)
+    print("Constraints:")
     print(constraints)
+    # compute constraint complexity
+    constraintcomplexity = 1
+    # multiplicatively build up the constraint size
+    for constraint in constraints:
+        constraintcomplexity = constraintcomplexity * (2 ** int(np.sum(constraint) / 2) + 1)
+    logconstraintcomplexity = np.log(constraintcomplexity)
+    print "Constraint complexity is"
+    print logconstraintcomplexity
+    # calculate constraint complexity given seq length
+    mutualcomplexity = logconstraintcomplexity / seq_length
+    print "Mutual complexity is"
+    print mutualcomplexity
+
     vals = []
     for i in range(len(constraints)):
         # vals.append(np.random.choice(range(1, int(np.sum(constraints[i]))), 1)[0])
@@ -158,6 +172,7 @@ def generate_general(seq_length, num_training_examples, num_constraints, soft=Fa
     good_constraints = []
     for constr, val in zip(constraints, vals):
         good_constraints.append(GeneralConstraint(constr, val))
+
     outputs = []
     for x in inputs:
         m = Model("MIP")
@@ -186,7 +201,7 @@ def generate_general(seq_length, num_training_examples, num_constraints, soft=Fa
         for i in range(seq_length):
             y.append(m_vars[i].x)
         outputs.append(y)
-    return np.array(inputs), np.array(outputs), good_constraints
+    return np.array(inputs), np.array(outputs), good_constraints, logconstraintcomplexity, mutualcomplexity
 
 def separate_train_test(inputs, outputs, test_size=100):
     n = len(inputs)
