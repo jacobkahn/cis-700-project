@@ -60,29 +60,30 @@ class Perceptron(object):
         return arrs
 
 
-    def inference(self, x, w):
+    def inference(self, x, w, use_ilp=True):
         """
         Return best y for given x, weight vector w, constraints, and
         feature vector function phi. Naively searches through each
         possible structured output.
         """
         # Naive inference
-        """candidates = self._binary_arrs(self.seq_length)
-        max_score = 0
-        y = None
-        for c in candidates:
-            feature_vector = self.feature_vector(x, c)
-            this_score = np.dot(w, feature_vector)
-            if this_score > max_score or y is None:
-                valid_flag = True
-                for const in self.constraints:
-                    if not const.evaluate(c):
-                        valid_flag = False
-                        break
-                if valid_flag:
-                    y = c
-                    max_score = this_score
-        return y"""
+        if not use_ilp:
+            candidates = self._binary_arrs(self.seq_length)
+            max_score = 0
+            y = None
+            for c in candidates:
+                feature_vector = self.feature_vector(x, c)
+                this_score = np.dot(w, feature_vector)
+                if this_score > max_score or y is None:
+                    valid_flag = True
+                    for const in self.constraints:
+                        if not const.evaluate(c):
+                            valid_flag = False
+                            break
+                    if valid_flag:
+                        y = c
+                        max_score = this_score
+            return y
         # ILP-based inference (currently supports only constraints of form
         # y_iy_j != 1)
         m = Model("MIP")
@@ -98,9 +99,12 @@ class Perceptron(object):
             return res
         m.setObjective(obj(), GRB.MAXIMIZE)
         for const in self.constraints:
-            i = const.index_array[0]
+            # Pairwise constraint handling
+            """i = const.index_array[0]
             j = const.index_array[1]
-            m.addConstr(m_vars[i]+m_vars[j] <= 1, str(i) + ' ' + str(j))
+            m.addConstr(m_vars[i]+m_vars[j] <= 1, str(i) + ' ' + str(j))"""
+            # General constraint handling
+            m.addConstr(quicksum([const.coeff[i]*m_vars[i] for i in range(len(m_vars))]) <= const.val, str(const.coeff) + ' ' + str(const.val))
         m.optimize()
         y = []
         for i in range(self.seq_length):
@@ -115,7 +119,7 @@ class Perceptron(object):
         return np.sum(np.abs(np.array(y) - np.array(y_hat)))
 
 
-    def train(self, dataX, dataY):
+    def train(self, dataX, dataY, use_ilp=True):
         """
         Runs the
         """
@@ -135,7 +139,7 @@ class Perceptron(object):
             # Loop through x and y
             for x, y in zip(self.trainDataX, self.trainDataY):
                 # Perform inference
-                y_hat = self.inference(x, self.w)
+                y_hat = self.inference(x, self.w, use_ilp=use_ilp)
                 # Update weight vector
                 if y_hat is not None:
                     self.w += self.feature_vector(x, y)-self.feature_vector(x, y_hat)
@@ -148,7 +152,7 @@ class Perceptron(object):
         return self.w_avg
 
 
-    def test(self, dataX, dataY):
+    def test(self, dataX, dataY, use_ilp=True):
         # Input features
         self.sanitize_input(dataX, dataY)
         self.testDataX = dataX
@@ -156,6 +160,6 @@ class Perceptron(object):
 
         self.total_error = 0
         for example, actual in zip(self.testDataX, self.testDataY):
-            y_hat = self.inference(example, self.w_avg)
+            y_hat = self.inference(example, self.w_avg, use_ilp=use_ilp)
             self.total_error += self.loss_function(y_hat, actual)
         return float(self.total_error) / (len(self.testDataY) * self.seq_length)
