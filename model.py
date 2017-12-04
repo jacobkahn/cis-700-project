@@ -79,7 +79,7 @@ class DeepLearningClient(LearningClient):
         model.fit(self.train[0], self.train[1], epochs=900)
         # model.fit(self.train[0], self.train[1], epochs=900)
         score = model.evaluate(self.test[0], self.test[1], batch_size=128)
-        return score
+        return score[1]
 
 
 class TFClient(LearningClient):
@@ -371,7 +371,7 @@ def run_parallel_compute(obj, args):
     """
     obj.run_parallelized_compute(args)
 
-def run(seq_length, num_examples, num_constraints=0):
+def run(seq_length, num_examples, num_constraints=0, soft=False, noise=False):
     # Set up shared data across processes
     manager = multiprocessing.Manager()
     # this is a shared map with mutex proclocks 
@@ -380,22 +380,28 @@ def run(seq_length, num_examples, num_constraints=0):
     jobs = []
 
     # Generate Data
-    [inputs, outputs, constraints, complexity, mutualcomplexity] = generate_general(seq_length, num_examples, num_constraints, noise=True)
+    [inputs, outputs, constraints, complexity, mutualcomplexity] = generate_general(seq_length, num_examples, num_constraints, soft, noise)
     [train, test] = separate_train_test(inputs, outputs)
     shared_results['constraint_complexity'] = complexity
     shared_results['mutual_complexity'] = mutualcomplexity
 
+    shared_results['seq_length'] = seq_length
+    shared_results['num_constraints'] = num_constraints
+    shared_results['num_examples'] = num_examples
+    shared_results['soft'] = soft
+    shared_results['noise'] = noise
+
     # Naive classifier
-    # lc_acc = LocalClassifierClient(train, test, seq_length)
-    # p = multiprocessing.Process(target=run_parallel_compute, args=(lc_acc, shared_results))
-    # jobs.append(p)
-    # p.start()
+    lc_acc = LocalClassifierClient(train, test, seq_length)
+    p = multiprocessing.Process(target=run_parallel_compute, args=(lc_acc, shared_results))
+    jobs.append(p)
+    p.start()
 
     # Deep learning
-    # dl_acc = DeepLearningClient(train, test, seq_length)
-    # p = multiprocessing.Process(target=run_parallel_compute, args=(dl_acc, shared_results))
-    # jobs.append(p)
-    # p.start()
+    dl_acc = DeepLearningClient(train, test, seq_length)
+    p = multiprocessing.Process(target=run_parallel_compute, args=(dl_acc, shared_results))
+    jobs.append(p)
+    p.start()
 
     # Tensorflow
     # tf_acc = TFClient(train, test, seq_length)
@@ -418,18 +424,20 @@ def run(seq_length, num_examples, num_constraints=0):
     # p.start()
 
     # Structured perceptron
-    # perceptron_client = PerceptronClient(train, test, seq_length)
-    # perceptron_client.add_constraints(constraints)
-    # p = multiprocessing.Process(target=run_parallel_compute, args=(perceptron_client, shared_results))
-    # jobs.append(p)
-    # p.start()
+    perceptron_client = PerceptronClient(train, test, seq_length)
+    perceptron_client.add_constraints(constraints)
+    p = multiprocessing.Process(target=run_parallel_compute, args=(perceptron_client, shared_results))
+    jobs.append(p)
+    p.start()
 
     # join all subprocesses
     for job in jobs:
         p.join()
     # return {'local': lc_acc, 'ffn': dl_acc, 'perceptron': p_acc, 'gan': gan_acc, 'tf': tf_acc, 'dan': dan_acc}
     # return shared threadlocal data
-    return shared_results
+    print "RESULTS:"
+    print shared_results
+    return shared_results._getvalue()
 
 
 # the main function

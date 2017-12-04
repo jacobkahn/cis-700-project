@@ -155,8 +155,8 @@ def generate_general(seq_length, num_training_examples, num_constraints, soft=Fa
     constraintcomplexity = 1
     # multiplicatively build up the constraint size
     for constraint in constraints:
-        constraintcomplexity = constraintcomplexity * (2 ** int(np.sum(constraint) / 2) + 1)
-    logconstraintcomplexity = np.log(constraintcomplexity)
+        constraintcomplexity = constraintcomplexity + np.log((2 ** int(np.sum(constraint) / 2) + 1))
+    logconstraintcomplexity = constraintcomplexity
     print "Constraint complexity is"
     print logconstraintcomplexity
     # calculate constraint complexity given seq length
@@ -194,7 +194,7 @@ def generate_general(seq_length, num_training_examples, num_constraints, soft=Fa
         m.setObjective(obj(), GRB.MAXIMIZE)
         for const in good_constraints:
             # General constraint handling
-            if (not soft) or np.random.rand() < 0.4:
+            if (not soft) or np.random.rand() < 0.5:
                 m.addConstr(quicksum([const.coeff[i]*m_vars[i] for i in range(len(m_vars))]) <= const.val, str(const.coeff) + ' ' + str(const.val))
         m.optimize()
         y = []
