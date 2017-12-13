@@ -130,6 +130,9 @@ class Perceptron(object):
 
         # Set weight vectors
         self.w = np.zeros(self.wv_length)
+        w_list = []
+        w_counts = []
+        curr_w_count = 0
         self.w_avg = np.zeros(self.wv_length)
         # counts the number of times we updated w_avg (we have a valid y prediction)
         iter_count = 0
@@ -142,13 +145,23 @@ class Perceptron(object):
                 y_hat = self.inference(x, self.w, use_ilp=use_ilp)
                 # Update weight vector
                 if y_hat is not None:
+                    w_list.append(self.w)
+                    w_counts.append(curr_w_count)
                     self.w += self.feature_vector(x, y)-self.feature_vector(x, y_hat)
+                    curr_w_count = 0
                     # Update average weight vector
-                    self.w_avg = self.w_avg + self.w
+                    # self.w_avg = self.w_avg + self.w
                     iter_count += 1
+                curr_w_count += 1
         # Returns w_avg / (Tl): average weight vector divided by
         # number of tokens in the sequence x number of points
-        self.w_avg /= iter_count
+        # self.w_avg /= iter_count
+
+        # Weight the weight vectors by how long they survived
+        w_list.append(self.w)
+        w_counts.append(curr_w_count)
+        for wv, count in zip(w_list, w_counts):
+            self.w_avg += (1.0/np.sum(w_counts))*count*wv
         return self.w_avg
 
 
