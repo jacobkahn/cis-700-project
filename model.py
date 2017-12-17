@@ -1,7 +1,7 @@
 import numpy as np
 import keras
 from keras.models import Sequential
-from keras.layers import Dense, Dropout, Input, Concatenate, LSTM
+from keras.layers import Dense, Dropout, Input, Concatenate, LSTM, RepeatVector
 from keras.optimizers import RMSprop, SGD, Adam
 from keras import backend as K
 from keras import losses
@@ -36,17 +36,32 @@ class RNNClient(LearningClient):
         return 'rnn'
 
     def run(self):
-        HIDDEN_SIZE = 64
+        self.train[0] = np.array(self.train[0])
+
+        newdata = []
+        for i, item in enumerate(self.train[0]):
+            new = []
+            for i in range(0, self.seq_length):
+                new.append(item)
+            newdata.append(np.array(new))
+
+        self.train[0] = np.array(newdata)
+
+        # self.train[0] = np.reshape(self.train[0],(len(self.train[0]), self.seq_length, 1))
+
+        HIDDEN_SIZE = self.seq_length
         model = Sequential()
-        model.add(LSTM(HIDDEN_SIZE, input_shape=(self.seq_length)))
-        model.add(layers.RepeatVector(self.seq_length + 1))
+
+        # model.add(LSTM(HIDDEN_SIZE, input_shape=(self.seq_length, 1)))
+        model.add(LSTM(HIDDEN_SIZE, input_shape=(self.seq_length, self.seq_length)))
+        # model.add(Dense(self.seq_length, activation='relu', input_dim=self.seq_length))
 
         def loss(y_true, y_pred, alpha=0.001):
             bce = K.binary_crossentropy(y_true, y_pred)
             return bce
 
-        model.add(Dense(self.seq_length, activation='sigmoid', input_dim=2*self.seq_length))
-        model.add(Dropout(0.2))
+        # model.add(Dense(self.seq_length, activation='sigmoid', input_dim=2*self.seq_length))
+        # model.add(Dropout(0.2))
 
 
         sgd = SGD(lr=0.3, decay=0, momentum=0.9, nesterov=True)
