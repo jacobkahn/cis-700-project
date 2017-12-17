@@ -36,8 +36,8 @@ class RNNClient(LearningClient):
         return 'rnn'
 
     def run(self):
+        # Reshape train data
         self.train[0] = np.array(self.train[0])
-
         newdata = []
         for i, item in enumerate(self.train[0]):
             new = []
@@ -47,7 +47,16 @@ class RNNClient(LearningClient):
 
         self.train[0] = np.array(newdata)
 
-        # self.train[0] = np.reshape(self.train[0],(len(self.train[0]), self.seq_length, 1))
+
+        # Reshape test data
+        self.test[0] = np.array(self.test[0])
+        newdata = []
+        for i, item in enumerate(self.test[0]):
+            new = []
+            for i in range(0, self.seq_length):
+                new.append(item)
+            newdata.append(np.array(new))
+        self.test[0] = np.array(newdata)
 
         HIDDEN_SIZE = self.seq_length
         model = Sequential()
@@ -71,6 +80,7 @@ class RNNClient(LearningClient):
         model.fit(self.train[0], self.train[1], epochs=900)
         # model.fit(self.train[0], self.train[1], epochs=900)
         score = model.evaluate(self.test[0], self.test[1], batch_size=128)
+        return score[1]
 
 
 class DeepLearningClient(LearningClient):
@@ -434,16 +444,16 @@ def run(seq_length, num_examples, num_constraints=0, soft=False, noise=False):
     shared_results['noise'] = noise
 
     # Naive classifier
-    # lc_acc = LocalClassifierClient(train, test, seq_length)
-    # p = multiprocessing.Process(target=run_parallel_compute, args=(lc_acc, shared_results))
-    # jobs.append(p)
-    # p.start()
+    lc_acc = LocalClassifierClient(train, test, seq_length)
+    p = multiprocessing.Process(target=run_parallel_compute, args=(lc_acc, shared_results))
+    jobs.append(p)
+    p.start()
 
     # Deep learning
-    # dl_acc = DeepLearningClient(train, test, seq_length)
-    # p = multiprocessing.Process(target=run_parallel_compute, args=(dl_acc, shared_results))
-    # jobs.append(p)
-    # p.start()
+    dl_acc = DeepLearningClient(train, test, seq_length)
+    p = multiprocessing.Process(target=run_parallel_compute, args=(dl_acc, shared_results))
+    jobs.append(p)
+    p.start()
 
     # RNN
     rnn_acc = RNNClient(train, test, seq_length)
