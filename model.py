@@ -1,7 +1,7 @@
 import numpy as np
 import keras
 from keras.models import Sequential
-from keras.layers import Dense, Dropout, Input, Concatenate
+from keras.layers import Dense, Dropout, Input, Concatenate, LSTM
 from keras.optimizers import RMSprop, SGD, Adam
 from keras import backend as K
 from keras import losses
@@ -29,6 +29,33 @@ class LearningClient(object):
 
     def run_parallelized_compute(self, shared_memory):
         shared_memory[self.get_identifying_key()] = self.run()
+
+
+class RNNClient(LearningClient):
+    def get_identifying_key(self):
+        return 'rnn'
+
+    def run(self):
+        HIDDEN_SIZE = 64
+        model = Sequential()
+        model.add(LSTM(HIDDEN_SIZE, input_shape=(self.seq_length)))
+        model.add(layers.RepeatVector(self.seq_length + 1))
+
+        def loss(y_true, y_pred, alpha=0.001):
+            bce = K.binary_crossentropy(y_true, y_pred)
+            return bce
+
+        model.add(Dense(self.seq_length, activation='sigmoid', input_dim=2*self.seq_length))
+        model.add(Dropout(0.2))
+
+
+        sgd = SGD(lr=0.3, decay=0, momentum=0.9, nesterov=True)
+        adam = Adam(lr=0.0002, decay=0)
+
+        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        model.fit(self.train[0], self.train[1], epochs=900)
+        # model.fit(self.train[0], self.train[1], epochs=900)
+        score = model.evaluate(self.test[0], self.test[1], batch_size=128)
 
 
 class DeepLearningClient(LearningClient):
@@ -85,7 +112,7 @@ class DeepLearningClient(LearningClient):
 class TFClient(LearningClient):
     def get_identifying_key(self):
         return 'tf'
-    
+
     def run(self):
         graph = tf.Graph()
         # gan = GanClient(self.train, self.test, self.seq_length)
@@ -374,7 +401,7 @@ def run_parallel_compute(obj, args):
 def run(seq_length, num_examples, num_constraints=0, soft=False, noise=False):
     # Set up shared data across processes
     manager = multiprocessing.Manager()
-    # this is a shared map with mutex proclocks 
+    # this is a shared map with mutex proclocks
     shared_results = manager.dict()
     # collection of process threads to be joined
     jobs = []
@@ -392,14 +419,20 @@ def run(seq_length, num_examples, num_constraints=0, soft=False, noise=False):
     shared_results['noise'] = noise
 
     # Naive classifier
-    lc_acc = LocalClassifierClient(train, test, seq_length)
-    p = multiprocessing.Process(target=run_parallel_compute, args=(lc_acc, shared_results))
-    jobs.append(p)
-    p.start()
+    # lc_acc = LocalClassifierClient(train, test, seq_length)
+    # p = multiprocessing.Process(target=run_parallel_compute, args=(lc_acc, shared_results))
+    # jobs.append(p)
+    # p.start()
 
     # Deep learning
-    dl_acc = DeepLearningClient(train, test, seq_length)
-    p = multiprocessing.Process(target=run_parallel_compute, args=(dl_acc, shared_results))
+    # dl_acc = DeepLearningClient(train, test, seq_length)
+    # p = multiprocessing.Process(target=run_parallel_compute, args=(dl_acc, shared_results))
+    # jobs.append(p)
+    # p.start()
+
+    # RNN
+    rnn_acc = RNNClient(train, test, seq_length)
+    p = multiprocessing.Process(target=run_parallel_compute, args=(rnn_acc, shared_results))
     jobs.append(p)
     p.start()
 
@@ -424,11 +457,11 @@ def run(seq_length, num_examples, num_constraints=0, soft=False, noise=False):
     # p.start()
 
     # Structured perceptron
-    perceptron_client = PerceptronClient(train, test, seq_length)
-    perceptron_client.add_constraints(constraints)
-    p = multiprocessing.Process(target=run_parallel_compute, args=(perceptron_client, shared_results))
-    jobs.append(p)
-    p.start()
+    # perceptron_client = PerceptronClient(train, test, seq_length)
+    # perceptron_client.add_constraints(constraints)
+    # p = multiprocessing.Process(target=run_parallel_compute, args=(perceptron_client, shared_results))
+    # jobs.append(p)
+    # p.start()
 
     # join all subprocesses
     for job in jobs:

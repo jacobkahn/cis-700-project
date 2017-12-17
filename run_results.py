@@ -13,7 +13,11 @@ def run_soft_sim(seq_length, size, cnum, soft, shared_data):
     res = model.run(seq_length, size, num_constraints=cnum, soft=soft)
     shared_data.append(res)
 
-NOISE_OUTNAME = "noise_results.csv"
+def run_neutral_sim(seq_length, size, cnum, shared_data):
+    res = model.run(seq_length, size, num_constraints=cnum)
+    shared_data.append(res)
+
+NOISE_OUTNAME = "noise_results100.csv"
 def noise(_):
     # shared data structure for all results
     manager = multiprocessing.Manager()
@@ -22,7 +26,7 @@ def noise(_):
 
     seq_lengths = [10, 20]
     constraint_list = [0, 5, 10, 20, 30]
-    training_sizes = range(1000, 5001, 1000)
+    training_sizes = range(100, 2001, 100)
     for seq_length in seq_lengths:
         for idx1, cnum in enumerate(constraint_list):
             for idx2, size in enumerate(training_sizes):
@@ -57,7 +61,7 @@ def noise(_):
 
 
 
-SOFT_OUTNAME = "soft_results.csv"
+SOFT_OUTNAME = "soft_results100.csv"
 def soft(_):
     # shared data structure for all results
     manager = multiprocessing.Manager()
@@ -66,7 +70,7 @@ def soft(_):
 
     seq_lengths = [10, 20]
     constraint_list = [5, 10, 20, 30]
-    training_sizes = range(1000, 5001, 1000)
+    training_sizes = range(100, 2001, 100)
     for seq_length in seq_lengths:
         for idx1, cnum in enumerate(constraint_list):
             for idx2, size in enumerate(training_sizes):
@@ -103,14 +107,55 @@ def soft(_):
             writer.writerow({k: str(v) for k,v in result.items()})
 
 
+NEUTRAL_OUTNAME = "neutral_results100.csv"
+def neutral(_):
+    # shared data structure for all results
+    manager = multiprocessing.Manager()
+    shared_results_list = manager.list()
+    jobs = []
+
+    seq_lengths = [10, 20]
+    constraint_list = [0, 5, 10, 20, 30]
+    training_sizes = range(100, 2001, 100)
+    for seq_length in seq_lengths:
+        for idx1, cnum in enumerate(constraint_list):
+            for idx2, size in enumerate(training_sizes):
+                # Run all selected simulations in model
+                print "Starting neutral process with parameters:"
+                print(seq_length, size, cnum, shared_results_list)
+                p = multiprocessing.Process(target=run_neutral_sim, args=(seq_length, size, cnum, shared_results_list))
+                jobs.append(p)
+                p.start()
+
+    # wait on all jobs
+    for job in jobs:
+        job.join()
+
+    # write results to file
+    print "All neutral results:"
+    print shared_results_list
+
+    with open(NEUTRAL_OUTNAME, "a+") as outfile:
+        writer = csv.DictWriter(outfile, shared_results_list[0].keys())
+        writer.writeheader()
+        for result in shared_results_list:
+            writer.writerow({k: str(v) for k,v in result.items()})
+
+
+
 
 if __name__ == "__main__":
     # 10, 20
-    noise_proc = multiprocessing.Process(target=noise, args=(0,))    
-    soft_proc = multiprocessing.Process(target=soft, args=(0,))    
-    noise_proc.start()
-    soft_proc.start()
+    neutral_proc = multiprocessing.Process(target=neutral, args=(0,))
+    noise_proc = multiprocessing.Process(target=noise, args=(0,))
+    soft_proc = multiprocessing.Process(target=soft, args=(0,))
 
-    soft_proc.join()
+    # Run sequentially so we don't break the machine
+    neutral_proc.start()
+    neutral_proc.join()
+
+    noise_proc.start()
     noise_proc.join()
-    
+
+    soft_proc.start()
+    soft_proc.join()
