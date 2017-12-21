@@ -444,22 +444,25 @@ def run(seq_length, num_examples, num_constraints=0, soft=False, noise=False):
     shared_results['noise'] = noise
 
     # Naive classifier
-    lc_acc = LocalClassifierClient(train, test, seq_length)
+    """lc_acc = LocalClassifierClient(train, test, seq_length)
     p = multiprocessing.Process(target=run_parallel_compute, args=(lc_acc, shared_results))
     jobs.append(p)
-    p.start()
+    p.start()"""
+    lc_acc = LocalClassifierClient(train, test, seq_length).run()
 
     # Deep learning
-    dl_acc = DeepLearningClient(train, test, seq_length)
+    """dl_acc = DeepLearningClient(train, test, seq_length)
     p = multiprocessing.Process(target=run_parallel_compute, args=(dl_acc, shared_results))
     jobs.append(p)
-    p.start()
+    p.start()"""
+    dl_acc = DeepLearningClient(train, test, seq_length).run()
 
     # RNN
-    rnn_acc = RNNClient(train, test, seq_length)
+    """rnn_acc = RNNClient(train, test, seq_length)
     p = multiprocessing.Process(target=run_parallel_compute, args=(rnn_acc, shared_results))
     jobs.append(p)
-    p.start()
+    p.start()"""
+    rnn_acc = RNNClient(train, test, seq_length).run()
 
     # Tensorflow
     # tf_acc = TFClient(train, test, seq_length)
@@ -487,20 +490,21 @@ def run(seq_length, num_examples, num_constraints=0, soft=False, noise=False):
     # p = multiprocessing.Process(target=run_parallel_compute, args=(perceptron_client, shared_results))
     # jobs.append(p)
     # p.start()
+    perc_acc = PerceptronClient(train, test, seq_length).run()
 
     # join all subprocesses
-    for job in jobs:
-        p.join()
-    # return {'local': lc_acc, 'ffn': dl_acc, 'perceptron': p_acc, 'gan': gan_acc, 'tf': tf_acc, 'dan': dan_acc}
+    # for job in jobs:
+        # p.join()
+    return {'local': lc_acc, 'ffn': dl_acc, 'perceptron': p_acc, 'gan': gan_acc, 'tf': tf_acc, 'dan': dan_acc}
     # return shared threadlocal data
-    print "RESULTS:"
-    print shared_results
-    return shared_results._getvalue()
+    # print("RESULTS:")
+    # print(shared_results)
+    # return shared_results._getvalue()
 
 
 # the main function
 if __name__ == "__main__":
-    results = run(15, 1000, num_constraints=14)
-    print "-------------------------------------------------------"
-    print "RESULTS"
-    print results
+    # results = run(15, 1000, num_constraints=14)
+    print("-------------------------------------------------------")
+    print("RESULTS")
+    # print(results)

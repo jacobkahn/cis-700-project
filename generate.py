@@ -157,12 +157,12 @@ def generate_general(seq_length, num_training_examples, num_constraints, soft=Fa
     for constraint in constraints:
         constraintcomplexity = constraintcomplexity + np.log((2 ** int(np.sum(constraint) / 2) + 1))
     logconstraintcomplexity = constraintcomplexity
-    print "Constraint complexity is"
-    print logconstraintcomplexity
+    print("Constraint complexity is")
+    print(logconstraintcomplexity)
     # calculate constraint complexity given seq length
     mutualcomplexity = logconstraintcomplexity / seq_length
-    print "Mutual complexity is"
-    print mutualcomplexity
+    print("Mutual complexity is")
+    print(mutualcomplexity)
 
     vals = []
     for i in range(len(constraints)):

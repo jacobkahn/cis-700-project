@@ -21,7 +21,7 @@ class LocalClassifier(object):
     def train(self, dataX, dataY, seq_el_idx):
         # index in the sequence to learn now
         self.seq_el_idx = seq_el_idx
-        print "Local perceptron running for index " + str(self.seq_el_idx)
+        print("Local perceptron running for index " + str(self.seq_el_idx))
         # Input features, change 0 to -1
         dataY = self.sanitize_input(dataX, dataY)
         # extract points at index

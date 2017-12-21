@@ -138,7 +138,7 @@ class Perceptron(object):
         iter_count = 0
         # Iterate as many times
         for iterNum in range(0, self.num_iterations):
-            print "Perceptron: iteration " + str(iter_count)
+            print("Perceptron: iteration " + str(iter_count))
             # Loop through x and y
             for x, y in zip(self.trainDataX, self.trainDataY):
                 # Perform inference
