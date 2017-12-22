@@ -506,7 +506,7 @@ def run(seq_length, num_examples, num_constraints=0, soft=False, noise=False):
 
 # the main function
 if __name__ == "__main__":
-    results = run(10, 1000, num_constraints=15)
+    results = run(10, 2000, num_constraints=10, soft=True)
     print "-------------------------------------------------------"
     print "RESULTS"
     print results
