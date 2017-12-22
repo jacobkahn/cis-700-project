@@ -1,10 +1,4 @@
 import numpy as np
-import keras
-from keras.models import Sequential
-from keras.layers import Dense, Dropout, Input, Concatenate, LSTM, RepeatVector
-from keras.optimizers import RMSprop, SGD, Adam
-from keras import backend as K
-from keras import losses
 import tensorflow as tf
 import perceptron
 from generate import *
@@ -36,6 +30,12 @@ class RNNClient(LearningClient):
         return 'rnn'
 
     def run(self):
+        import keras
+        from keras.models import Sequential
+        from keras.layers import Dense, Dropout, Input, Concatenate, LSTM, RepeatVector
+        from keras.optimizers import RMSprop, SGD, Adam
+        from keras import backend as K
+        from keras import losses
         # Reshape train data
         self.train[0] = np.array(self.train[0])
         newdata = []
@@ -62,7 +62,7 @@ class RNNClient(LearningClient):
         model = Sequential()
 
         # model.add(LSTM(HIDDEN_SIZE, input_shape=(self.seq_length, 1)))
-        model.add(LSTM(HIDDEN_SIZE, input_shape=(self.seq_length, self.seq_length)))
+        model.add(LSTM(HIDDEN_SIZE, activation='sigmoid', dropout=0.2, recurrent_dropout=0.2, input_shape=(self.seq_length, self.seq_length)))
         # model.add(Dense(self.seq_length, activation='relu', input_dim=self.seq_length))
 
         def loss(y_true, y_pred, alpha=0.001):
@@ -77,7 +77,7 @@ class RNNClient(LearningClient):
         adam = Adam(lr=0.0002, decay=0)
 
         model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-        model.fit(self.train[0], self.train[1], epochs=900)
+        model.fit(self.train[0], self.train[1], epochs=300)
         # model.fit(self.train[0], self.train[1], epochs=900)
         score = model.evaluate(self.test[0], self.test[1], batch_size=128)
         return score[1]
@@ -88,6 +88,12 @@ class DeepLearningClient(LearningClient):
         return 'ffn'
 
     def run(self):
+        import keras
+        from keras.models import Sequential
+        from keras.layers import Dense, Dropout, Input, Concatenate, LSTM, RepeatVector
+        from keras.optimizers import RMSprop, SGD, Adam
+        from keras import backend as K
+        from keras import losses
         # do a deep learning
         model = Sequential()
         model.add(Dense(2*self.seq_length, activation='relu', input_dim=self.seq_length))
@@ -128,7 +134,7 @@ class DeepLearningClient(LearningClient):
             # return bce+alpha*K.log(gan_predict(y_pred))
             # return K.switch(K.greater(K.variable(value=0.4), bce), bce+alpha*(k_one-K.sigmoid(K.dot(K.sigmoid(K.dot(K.relu(K.dot(y_pred, weights1)+biases1), weights2)+biases2), weights3)+biases3)), bce)
         model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-        model.fit(self.train[0], self.train[1], epochs=900)
+        model.fit(self.train[0], self.train[1], epochs=300)
         # model.fit(self.train[0], self.train[1], epochs=900)
         score = model.evaluate(self.test[0], self.test[1], batch_size=128)
         return score[1]
@@ -390,7 +396,7 @@ class LocalClassifierClient(LearningClient):
         # Perceptrons for each digit
         localresults = []
         # For each element in sequence, create a perceptron
-        NUM_ITERS = 20
+        NUM_ITERS = 10
         for i in range(self.seq_length):
             p = localclassifier.LocalClassifier(NUM_ITERS, self.seq_length)
             train_result = p.train(self.train[0], self.train[1], i)
@@ -482,15 +488,15 @@ def run(seq_length, num_examples, num_constraints=0, soft=False, noise=False):
     # p.start()
 
     # Structured perceptron
-    # perceptron_client = PerceptronClient(train, test, seq_length)
-    # perceptron_client.add_constraints(constraints)
-    # p = multiprocessing.Process(target=run_parallel_compute, args=(perceptron_client, shared_results))
-    # jobs.append(p)
-    # p.start()
+    perceptron_client = PerceptronClient(train, test, seq_length)
+    perceptron_client.add_constraints(constraints)
+    p = multiprocessing.Process(target=run_parallel_compute, args=(perceptron_client, shared_results))
+    jobs.append(p)
+    p.start()
 
     # join all subprocesses
     for job in jobs:
-        p.join()
+        job.join()
     # return {'local': lc_acc, 'ffn': dl_acc, 'perceptron': p_acc, 'gan': gan_acc, 'tf': tf_acc, 'dan': dan_acc}
     # return shared threadlocal data
     print "RESULTS:"
@@ -500,7 +506,7 @@ def run(seq_length, num_examples, num_constraints=0, soft=False, noise=False):
 
 # the main function
 if __name__ == "__main__":
-    results = run(15, 1000, num_constraints=14)
+    results = run(10, 1000, num_constraints=15)
     print "-------------------------------------------------------"
     print "RESULTS"
     print results
